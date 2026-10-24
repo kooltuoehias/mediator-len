@@ -18,6 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -26,10 +27,10 @@ jobs:
         run: npm run compile
 
       - name: Build VSIX package
-        run: npx @vscode/vsce package --out mediator-len.vsix
+        run: npx vsce package --out mediator-len.vsix
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
           name: mediator-len-vsix
-          path: '*.vsix'
+          path: mediator-len.vsix
