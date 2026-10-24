@@ -1,0 +1,62 @@
+{
+  "name": "mediatr-lens",
+  "displayName": "MediatR Lens",
+  "description": "CodeLens navigation between MediatR requests and handlers in C# projects.",
+  "version": "0.1.0",
+  "publisher": "kooltuoehias",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kooltuoehias/mediator-len"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "MediatR",
+    "C#",
+    "navigation",
+    "dotnet"
+  ],
+  "activationEvents": [
+    "onLanguage:csharp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mediatr-lens.goToHandler",
+        "title": "MediatR: Go to Handler"
+      },
+      {
+        "command": "mediatr-lens.goToRequest",
+        "title": "MediatR: Go to Request"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorLangId == csharp",
+          "command": "mediatr-lens.goToHandler",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.7.2"
+  }
+}
