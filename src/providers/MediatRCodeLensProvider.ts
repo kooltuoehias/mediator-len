@@ -1,43 +1,61 @@
 import * as vscode from 'vscode';
 
-export class MediatRCodeLensProvider implements vscode.CodeLensProvider {
-  private readonly requestRegex = /class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[^\{\n]*?)?IRequest(?:\s*<\s*[^>]+>)?/g;
-  private readonly handlerRegex = /class\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^\{\n]*?IRequestHandler\s*<\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*[^>]+)?\s*>/g;
+function matchesRequestInheritance(inheritance: string): boolean {
+  return /\bIRequest(?:\s*<[^>]+>)?\b/.test(inheritance);
+}
 
+function getRequestNameFromHandlerInheritance(inheritance: string): string | undefined {
+  const match = /\bIRequestHandler\s*<\s*([A-Za-z_][A-Za-z0-9_]*)\b/.exec(inheritance);
+  return match?.[1];
+}
+
+function parseClassDeclarations(text: string): Array<{ className: string; inheritance: string; index: number }> {
+  const declarations: Array<{ className: string; inheritance: string; index: number }> = [];
+  const regex = /class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*([\s\S]*?))?\s*\{/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const className = match[1];
+    const inheritance = match[2] ?? '';
+    declarations.push({
+      className,
+      inheritance,
+      index: match.index
+    });
+  }
+
+  return declarations;
+}
+
+export class MediatRCodeLensProvider implements vscode.CodeLensProvider {
   public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const codeLenses: vscode.CodeLens[] = [];
-    const text = document.getText();
+    const declarations = parseClassDeclarations(document.getText());
 
-    let match: RegExpExecArray | null;
-
-    this.requestRegex.lastIndex = 0;
-    while ((match = this.requestRegex.exec(text)) !== null) {
-      const className = match[1];
-      const line = document.positionAt(match.index).line;
+    for (const declaration of declarations) {
+      const line = document.positionAt(declaration.index).line;
       const range = new vscode.Range(line, 0, line, 0);
 
-      codeLenses.push(
-        new vscode.CodeLens(range, {
-          title: '🔎 Go to Handler',
-          command: 'mediatr-lens.goToHandler',
-          arguments: [className]
-        })
-      );
-    }
+      if (matchesRequestInheritance(declaration.inheritance)) {
+        codeLenses.push(
+          new vscode.CodeLens(range, {
+            title: '🔎 Go to Handler',
+            command: 'mediatr-lens.goToHandler',
+            arguments: [declaration.className]
+          })
+        );
+      }
 
-    this.handlerRegex.lastIndex = 0;
-    while ((match = this.handlerRegex.exec(text)) !== null) {
-      const requestName = match[2];
-      const line = document.positionAt(match.index).line;
-      const range = new vscode.Range(line, 0, line, 0);
-
-      codeLenses.push(
-        new vscode.CodeLens(range, {
-          title: '🔎 Go to Request',
-          command: 'mediatr-lens.goToRequest',
-          arguments: [requestName]
-        })
-      );
+      const requestName = getRequestNameFromHandlerInheritance(declaration.inheritance);
+      if (requestName) {
+        codeLenses.push(
+          new vscode.CodeLens(range, {
+            title: '🔎 Go to Request',
+            command: 'mediatr-lens.goToRequest',
+            arguments: [requestName]
+          })
+        );
+      }
     }
 
     return codeLenses;
