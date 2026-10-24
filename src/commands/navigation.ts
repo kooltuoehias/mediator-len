@@ -1,18 +1,21 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function findMatchInWorkspace(searchPattern: string): Promise<vscode.Uri | undefined> {
-  const matches = await vscode.workspace.findTextInFiles({
-    pattern: searchPattern,
-    isRegex: true,
-    include: '**/*.cs',
-    exclude: '**/{bin,obj,node_modules}/**'
-  });
+async function findMatchInWorkspace(searchTerms: string[]): Promise<vscode.Uri | undefined> {
+  const files = await vscode.workspace.findFiles('**/*.cs', '**/{bin,obj,node_modules}/**');
 
-  return matches[0]?.uri;
+  for (const file of files) {
+    const content = fs.readFileSync(file.fsPath, 'utf8');
+    if (searchTerms.some((term) => content.includes(term))) {
+      return file;
+    }
+  }
+
+  return undefined;
 }
 
 function getLineIndexByPattern(document: vscode.TextDocument, pattern: RegExp): number {
@@ -44,9 +47,14 @@ export async function goToHandler(requestName?: string): Promise<void> {
     return;
   }
 
-  const pattern = `class\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:\\s*[^\\{\\n]*?IRequestHandler\\s*<\\s*${escapeRegex(resolvedName)}\\b`;
-  const uri = await findMatchInWorkspace(pattern);
+  const searchTerms = [
+    `IRequestHandler<${resolvedName}`,
+    `IRequestHandler< ${resolvedName}`,
+    `IRequestHandler<${resolvedName},`,
+    `IRequestHandler< ${resolvedName},`
+  ];
 
+  const uri = await findMatchInWorkspace(searchTerms);
   if (!uri) {
     vscode.window.showWarningMessage(`MediatR Lens: no handler found for '${resolvedName}'.`);
     return;
@@ -54,7 +62,8 @@ export async function goToHandler(requestName?: string): Promise<void> {
 
   const document = await vscode.workspace.openTextDocument(uri);
   const editor = await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
-  const line = getLineIndexByPattern(document, new RegExp(pattern, 'i'));
+  const pattern = new RegExp(`IRequestHandler\\s*<\\s*${escapeRegex(resolvedName)}\\b`, 'i');
+  const line = getLineIndexByPattern(document, pattern);
 
   if (line >= 0) {
     const position = new vscode.Position(line, 0);
@@ -82,9 +91,14 @@ export async function goToRequest(requestName?: string): Promise<void> {
     return;
   }
 
-  const pattern = `class\\s+[A-Za-z_][A-Za-z0-9_]*\\s*(?::\\s*[^\\{\\n]*?)?IRequest(?:\\s*<\\s*${escapeRegex(resolvedName)}\\b|\\s*<\\s*[^>]+>)?`;
-  const uri = await findMatchInWorkspace(pattern);
+  const searchTerms = [
+    `IRequest<${resolvedName}`,
+    `IRequest< ${resolvedName}`,
+    `class ${resolvedName} :`,
+    `class ${resolvedName}`
+  ];
 
+  const uri = await findMatchInWorkspace(searchTerms);
   if (!uri) {
     vscode.window.showWarningMessage(`MediatR Lens: no request found for '${resolvedName}'.`);
     return;
@@ -92,7 +106,8 @@ export async function goToRequest(requestName?: string): Promise<void> {
 
   const document = await vscode.workspace.openTextDocument(uri);
   const editor = await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
-  const line = getLineIndexByPattern(document, new RegExp(pattern, 'i'));
+  const pattern = new RegExp(`class\\s+[A-Za-z_][A-Za-z0-9_]*\\s*(?::\\s*[^\\{\\n]*?)?IRequest(?:\\s*<\\s*${escapeRegex(resolvedName)}\\b|\\s*<\\s*[^>]+>)?`, 'i');
+  const line = getLineIndexByPattern(document, pattern);
 
   if (line >= 0) {
     const position = new vscode.Position(line, 0);
