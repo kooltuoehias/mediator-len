@@ -1,3 +1,5 @@
+# vs code extension binary
+*.vsix
 # Logs
 logs
 *.log

@@ -1,117 +1,117 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { analysisService } from '../analyzer/analysisService';
+import { HandlerRegistration, NamedTypeLocation, RequestEntry } from '../analyzer/types';
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function findMatchInWorkspace(searchTerms: string[]): Promise<vscode.Uri | undefined> {
-  const files = await vscode.workspace.findFiles('**/*.cs', '**/{bin,obj,node_modules}/**');
-
-  for (const file of files) {
-    const content = fs.readFileSync(file.fsPath, 'utf8');
-    if (searchTerms.some((term) => content.includes(term))) {
-      return file;
-    }
+function resolveNameFromEditorOrArgument(argument: string | undefined): string | undefined {
+  if (argument) {
+    return argument;
   }
 
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return undefined;
+  }
+
+  const wordRange = editor.document.getWordRangeAtPosition(editor.selection.active);
+  return wordRange ? editor.document.getText(wordRange) : undefined;
+}
+
+async function openAt(file: string, line: number): Promise<void> {
+  const document = await vscode.workspace.openTextDocument(file);
+  const editor = await vscode.window.showTextDocument(document, {
+    preview: false,
+    viewColumn: vscode.ViewColumn.Active
+  });
+
+  const position = new vscode.Position(line, 0);
+  editor.selection = new vscode.Selection(position, position);
+  editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+}
+
+function innermostLocatedNode(chain: NamedTypeLocation[]): NamedTypeLocation | undefined {
+  for (let i = chain.length - 1; i >= 0; i--) {
+    if (chain[i].File && chain[i].Line !== null) {
+      return chain[i];
+    }
+  }
   return undefined;
 }
 
-function getLineIndexByPattern(document: vscode.TextDocument, pattern: RegExp): number {
-  const text = document.getText();
-  const match = pattern.exec(text);
-  if (!match) {
-    return -1;
-  }
-
-  return document.positionAt(match.index).line;
-}
-
 export async function goToHandler(requestName?: string): Promise<void> {
-  let resolvedName = requestName;
-
+  const resolvedName = resolveNameFromEditorOrArgument(requestName);
   if (!resolvedName) {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showInformationMessage('MediatR Lens: open a C# file and place the cursor on a request class.');
-      return;
-    }
-
-    const wordRange = editor.document.getWordRangeAtPosition(editor.selection.active);
-    resolvedName = wordRange ? editor.document.getText(wordRange) : undefined;
-  }
-
-  if (!resolvedName) {
-    vscode.window.showInformationMessage('MediatR Lens: could not determine the request name.');
+    vscode.window.showInformationMessage('MediatR Lens: open a C# file and place the cursor on a request class.');
     return;
   }
 
-  const searchTerms = [
-    `IRequestHandler<${resolvedName}`,
-    `IRequestHandler< ${resolvedName}`,
-    `IRequestHandler<${resolvedName},`,
-    `IRequestHandler< ${resolvedName},`
-  ];
+  const entries = analysisService.findEntriesForRequestName(resolvedName);
+  const candidates: { entry: RequestEntry; handler: HandlerRegistration }[] = [];
+  for (const entry of entries) {
+    for (const handler of entry.Handlers) {
+      if (handler.File && handler.Line !== null) {
+        candidates.push({ entry, handler });
+      }
+    }
+  }
 
-  const uri = await findMatchInWorkspace(searchTerms);
-  if (!uri) {
+  if (candidates.length === 0) {
     vscode.window.showWarningMessage(`MediatR Lens: no handler found for '${resolvedName}'.`);
     return;
   }
 
-  const document = await vscode.workspace.openTextDocument(uri);
-  const editor = await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
-  const pattern = new RegExp(`IRequestHandler\\s*<\\s*${escapeRegex(resolvedName)}\\b`, 'i');
-  const line = getLineIndexByPattern(document, pattern);
-
-  if (line >= 0) {
-    const position = new vscode.Position(line, 0);
-    editor.selection = new vscode.Selection(position, position);
-    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
-  }
-}
-
-export async function goToRequest(requestName?: string): Promise<void> {
-  let resolvedName = requestName;
-
-  if (!resolvedName) {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showInformationMessage('MediatR Lens: open a C# file and place the cursor on a handler class.');
-      return;
-    }
-
-    const wordRange = editor.document.getWordRangeAtPosition(editor.selection.active);
-    resolvedName = wordRange ? editor.document.getText(wordRange) : undefined;
-  }
-
-  if (!resolvedName) {
-    vscode.window.showInformationMessage('MediatR Lens: could not determine the request name.');
+  if (candidates.length === 1) {
+    await openAt(candidates[0].handler.File as string, candidates[0].handler.Line as number);
     return;
   }
 
-  const searchTerms = [
-    `IRequest<${resolvedName}`,
-    `IRequest< ${resolvedName}`,
-    `class ${resolvedName} :`,
-    `class ${resolvedName}`
-  ];
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((candidate) => ({
+      label: candidate.handler.Handler,
+      description: candidate.handler.File ?? undefined,
+      candidate
+    })),
+    { placeHolder: `Multiple handlers found for '${resolvedName}', pick one` }
+  );
 
-  const uri = await findMatchInWorkspace(searchTerms);
-  if (!uri) {
+  if (picked) {
+    await openAt(picked.candidate.handler.File as string, picked.candidate.handler.Line as number);
+  }
+}
+
+export async function goToRequest(handlerName?: string): Promise<void> {
+  const resolvedName = resolveNameFromEditorOrArgument(handlerName);
+  if (!resolvedName) {
+    vscode.window.showInformationMessage('MediatR Lens: open a C# file and place the cursor on a handler class.');
+    return;
+  }
+
+  const matches = analysisService.findHandlerMatchesForHandlerName(resolvedName);
+  const candidates = matches
+    .map((match) => ({ match, node: innermostLocatedNode(match.entry.RequestChain) }))
+    .filter((candidate): candidate is { match: typeof matches[number]; node: NamedTypeLocation } =>
+      candidate.node !== undefined
+    );
+
+  if (candidates.length === 0) {
     vscode.window.showWarningMessage(`MediatR Lens: no request found for '${resolvedName}'.`);
     return;
   }
 
-  const document = await vscode.workspace.openTextDocument(uri);
-  const editor = await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
-  const pattern = new RegExp(`class\\s+[A-Za-z_][A-Za-z0-9_]*\\s*(?::\\s*[^\\{\\n]*?)?IRequest(?:\\s*<\\s*${escapeRegex(resolvedName)}\\b|\\s*<\\s*[^>]+>)?`, 'i');
-  const line = getLineIndexByPattern(document, pattern);
+  if (candidates.length === 1) {
+    await openAt(candidates[0].node.File as string, candidates[0].node.Line as number);
+    return;
+  }
 
-  if (line >= 0) {
-    const position = new vscode.Position(line, 0);
-    editor.selection = new vscode.Selection(position, position);
-    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((candidate) => ({
+      label: candidate.node.Name,
+      description: candidate.node.File ?? undefined,
+      candidate
+    })),
+    { placeHolder: `Multiple requests found for '${resolvedName}', pick one` }
+  );
+
+  if (picked) {
+    await openAt(picked.candidate.node.File as string, picked.candidate.node.Line as number);
   }
 }
