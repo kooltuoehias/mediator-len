@@ -35,6 +35,10 @@
       {
         "command": "mediatr-lens.goToRequest",
         "title": "MediatR: Go to Request"
+      },
+      {
+        "command": "mediatr-lens.refreshAnalysis",
+        "title": "MediatR: Refresh Analysis"
       }
     ],
     "menus": {
@@ -45,6 +49,21 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "MediatR Lens",
+      "properties": {
+        "mediatrLens.analyzerProjectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the DI Navigator analyzer project folder (contains analyzer.csproj)."
+        },
+        "mediatrLens.solutionPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the .sln or .csproj file to analyze. Leave empty to auto-detect one in the open workspace."
+        }
+      }
     }
   },
   "scripts": {
